@@ -2,25 +2,43 @@ import Combination from '../models/combination.model.js'
 import CombinationValidator from '../utils/combination-validator.util.js'
 
 /**
- * CombinationService is responsible for generating and saving valid combinations
- * of items. It utilizes repositories for database operations and validation,
- * ensuring that the combinations adhere to the specified rules and constraints.
+ * CombinationService class for generating and saving unique combinations of items.
+ *
+ * This service is responsible for:
+ * - Generating valid combinations of items based on specific rules.
+ * - Saving the generated combinations to a database using a transactional approach.
+ *
+ * The class uses three repositories:
+ * - combinationRepo: For managing combinations in the database.
+ * - itemRepo: For accessing item data.
+ * - responseRepo: For handling responses associated with the combinations.
+ *
+ * @class CombinationService
  */
 class CombinationService {
+  /**
+   * Creates an instance of CombinationService.
+   *
+   * @param {Object} combinationRepo - The repository for combination operations.
+   * @param {Object} itemRepo - The repository for item operations.
+   * @param {Object} responseRepo - The repository for response operations.
+   */
   constructor(combinationRepo, itemRepo, responseRepo) {
-    this.combinationRepo = combinationRepo // Repository for managing combinations
-    this.itemRepo = itemRepo // Repository for managing items
-    this.responseRepo = responseRepo // Repository for managing responses
+    this.combinationRepo = combinationRepo
+    this.itemRepo = itemRepo
+    this.responseRepo = responseRepo
   }
 
   /**
-   * Generates valid combinations of items based on the specified length.
+   * Generates valid combinations of items of a specified length.
    *
-   * @param {Array} items - An array of item identifiers to generate combinations from.
-   * @param {number} length - The desired length of each combination.
-   * @yields {Combination} - A valid combination of items.
+   * This method is a generator function that yields valid combinations
+   * as Combination instances.
    *
-   * @throws {Error} - Throws an error if no valid item names are available for combination generation.
+   * @param {Array} items - The array of item identifiers.
+   * @param {number} length - The desired length of combinations.
+   * @returns {Generator} Yields valid combinations of items.
+   * @throws {Error} If no valid item names are available for combination generation.
    */
   *generateValidCombinations(items, length) {
     const itemNames = this.itemRepo.getItems(items)
@@ -36,14 +54,14 @@ class CombinationService {
   }
 
   /**
-   * Recursively generates combinations of items using backtracking.
+   * Recursively generates combinations of items.
    *
-   * @param {Array} items - The array of item names to generate combinations from.
-   * @param {number} length - The desired length of each combination.
-   * @param {Set} prefixSet - A set to track unique prefixes of the items in the current path.
+   * @param {Array} items - The array of item names.
+   * @param {number} length - The desired length of combinations.
+   * @param {Set} prefixSet - A set to track unique prefixes.
    * @param {Array} path - The current combination being constructed.
-   * @param {number} start - The starting index for the current iteration.
-   * @yields {Combination} - A valid combination of items when the path reaches the specified length.
+   * @param {number} start - The starting index for combination generation.
+   * @returns {Generator} Yields valid Combination instances.
    */
   *generateCombinations(items, length, prefixSet, path = [], start = 0) {
     if (path.length === length) {
@@ -74,14 +92,19 @@ class CombinationService {
   }
 
   /**
-   * Saves generated combinations into the database within a transaction.
+   * Saves generated combinations to the database.
    *
-   * @param {Array} items - An array of item identifiers to generate combinations from.
-   * @param {number} length - The desired length of each combination.
-   * @returns {Object} - An object containing the ID of the combination and the generated combinations.
+   * This method validates the number of items, generates combinations,
+   * and performs database operations within a transaction to ensure
+   * consistency. It inserts both the combinations and the items associated with
+   * them into their respective tables.
    *
-   * @throws {Error} - Throws an error if there are not enough items to generate combinations,
-   * or if any item or response ID is undefined during the insertion process.
+   * @param {Array} items - The array of item identifiers.
+   * @param {number} length - The desired length of combinations.
+   * @returns {Promise<Object>} The response containing the saved combination ID
+   * and the items in the combinations.
+   * @throws {Error} If there are not enough items to generate combinations or if
+   * an item or response ID is undefined.
    */
   async saveCombinations(items, length) {
     const combinations = []
