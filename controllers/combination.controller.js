@@ -6,7 +6,15 @@ import ResponseRepository from '../repositories/response.repository.js'
 
 import CombinationService from '../services/combination.service.js'
 
+/**
+ * CombinationController is responsible for handling API requests related
+ * to generating combinations of items.
+ */
 class CombinationController {
+  /**
+   * Creates an instance of CombinationController.
+   * Initializes the CombinationService with the necessary repositories.
+   */
   constructor() {
     this.combinationService = new CombinationService(
       new CombinationRepository(),
@@ -16,6 +24,8 @@ class CombinationController {
   }
 
   /**
+   * Generates combinations based on the provided items and length.
+   *
    * @swagger
    * /generate:
    *   post:
@@ -52,6 +62,11 @@ class CombinationController {
    *                       type: string
    *       400:
    *         description: Bad request
+   *
+   * @param {Object} req - The request object, containing the body with items and length.
+   * @param {Object} res - The response object used to send the response.
+   * @returns {Promise<void>} A promise that resolves when the response is sent.
+   * @throws {Error} If there is an error during combination generation.
    */
   async generate(req, res) {
     const { items, length } = req.body
