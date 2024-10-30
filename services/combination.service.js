@@ -1,92 +1,103 @@
 import Combination from '../models/combination.model.js'
-
 import CombinationValidator from '../utils/combination-validator.util.js'
 
 /**
  * CombinationService is responsible for generating and saving valid combinations
- * of items, utilizing repositories for database operations and validation.
+ * of items. It utilizes repositories for database operations and validation,
+ * ensuring that the combinations adhere to the specified rules and constraints.
  */
 class CombinationService {
-  /**
-   * Creates an instance of CombinationService.
-   *
-   * @param {CombinationRepository} combinationRepo - The repository for handling combination data.
-   * @param {ItemRepository} itemRepo - The repository for handling item data.
-   * @param {ResponseRepository} responseRepo - The repository for handling response data.
-   */
   constructor(combinationRepo, itemRepo, responseRepo) {
-    this.combinationRepo = combinationRepo
-    this.itemRepo = itemRepo
-    this.responseRepo = responseRepo
+    this.combinationRepo = combinationRepo // Repository for managing combinations
+    this.itemRepo = itemRepo // Repository for managing items
+    this.responseRepo = responseRepo // Repository for managing responses
   }
 
   /**
-   * Generates valid combinations of items with the specified length.
+   * Generates valid combinations of items based on the specified length.
    *
-   * This generator function yields valid combinations of item names
-   * based on the provided item counts and specified length.
-   *
-   * @param {Object<number>} items - An object representing the counts of each item.
+   * @param {Array} items - An array of item identifiers to generate combinations from.
    * @param {number} length - The desired length of each combination.
-   * @returns {Iterable<Combination>} A generator yielding valid Combination objects.
+   * @yields {Combination} - A valid combination of items.
+   *
+   * @throws {Error} - Throws an error if no valid item names are available for combination generation.
    */
   *generateValidCombinations(items, length) {
     const itemNames = this.itemRepo.getItems(items)
 
-    yield* this.generateCombinations(itemNames, length)
-  }
-
-  /**
-   * Generates all combinations of items of a specified length.
-   *
-   * This generator function produces combinations using a recursive approach,
-   * yielding valid combinations only if they pass validation checks.
-   *
-   * @param {Array<string>} items - An array of item names to generate combinations from.
-   * @param {number} length - The desired length of each combination.
-   * @returns {Iterable<Combination>} A generator yielding Combination objects.
-   */
-  *generateCombinations(items, length) {
-    function* combinationGenerator(path = [], start = 0) {
-      if (path.length === length) {
-        if (CombinationValidator.isValid(path)) {
-          yield new Combination([...path])
-        }
-
-        return
-      }
-
-      for (let i = start; i < items.length; i++) {
-        path.push(items[i])
-
-        yield* combinationGenerator(path, i + 1)
-
-        path.pop()
-      }
+    if (!itemNames || !itemNames.length) {
+      throw new Error('No valid item names available for combination generation.')
     }
 
-    yield* combinationGenerator()
+    // Create a Set to store unique prefixes
+    const prefixSet = new Set()
+
+    yield* this.generateCombinations(itemNames, length, prefixSet)
   }
 
   /**
-   * Saves valid combinations to the database within a transaction.
+   * Recursively generates combinations of items using backtracking.
    *
-   * This method generates valid combinations, saves them to the combination
-   * repository, and also records the associated response in the response repository.
-   *
-   * @param {Object<number>} items - An object representing the counts of each item.
+   * @param {Array} items - The array of item names to generate combinations from.
    * @param {number} length - The desired length of each combination.
-   * @returns {Promise<Object>} A promise that resolves to an object containing the ID
-   *                            of the saved combinations and the combinations themselves.
-   * @throws {Error} If there is an error during the generation or saving process.
+   * @param {Set} prefixSet - A set to track unique prefixes of the items in the current path.
+   * @param {Array} path - The current combination being constructed.
+   * @param {number} start - The starting index for the current iteration.
+   * @yields {Combination} - A valid combination of items when the path reaches the specified length.
+   */
+  *generateCombinations(items, length, prefixSet, path = [], start = 0) {
+    if (path.length === length) {
+      if (CombinationValidator.isValid(path)) {
+        yield new Combination([...path]) // Yield a new Combination instance
+      }
+      return
+    }
+
+    for (let i = start; i < items.length; i++) {
+      const currentItem = items[i]
+
+      const prefix = currentItem[0] // Assuming prefix is the first character
+
+      // Check if the prefix already exists in the path
+      if (!prefixSet.has(prefix)) {
+        path.push(currentItem) // Add the current item to the path
+
+        prefixSet.add(prefix) // Add the current item's prefix to the set
+
+        yield* this.generateCombinations(items, length, prefixSet, path, i + 1) // Recur with the updated path
+
+        path.pop() // Remove the last item to backtrack
+
+        prefixSet.delete(prefix) // Remove the prefix after backtracking
+      }
+    }
+  }
+
+  /**
+   * Saves generated combinations into the database within a transaction.
+   *
+   * @param {Array} items - An array of item identifiers to generate combinations from.
+   * @param {number} length - The desired length of each combination.
+   * @returns {Object} - An object containing the ID of the combination and the generated combinations.
+   *
+   * @throws {Error} - Throws an error if there are not enough items to generate combinations,
+   * or if any item or response ID is undefined during the insertion process.
    */
   async saveCombinations(items, length) {
     const combinations = []
 
+    const itemNames = this.itemRepo.getItems(items)
+
+    if (itemNames.length < length) {
+      return { message: 'Not enough items to generate combinations.' }
+    }
+
+    // Generate valid combinations
     for (let combination of this.generateValidCombinations(items, length)) {
       combinations.push(combination)
     }
 
+    // Execute database operations within a transaction
     return await this.combinationRepo.executeInTransaction(async (connection) => {
       const combinationId = await this.combinationRepo.batchInsert(combinations, connection)
 
@@ -95,7 +106,23 @@ class CombinationService {
         combinations: combinations.map((c) => c.items),
       })
 
-      await this.responseRepo.insert(combinationId, responseText, connection)
+      // Insert response and get the ID
+      const responseId = await this.responseRepo.insert(combinationId, responseText, connection)
+
+      // Insert items and link them to the response and the combination
+      for (const combination of combinations) {
+        for (const item of combination.items) {
+          // Check if item or responseId is undefined
+          if (item === undefined || responseId === undefined) {
+            throw new Error('Item or response ID is undefined.')
+          }
+
+          const itemId = await this.itemRepo.insert(item, responseId, connection)
+
+          // Link the combination to the item
+          await this.combinationRepo.linkCombinationItem(combinationId, itemId, connection)
+        }
+      }
 
       return {
         id: combinationId,
