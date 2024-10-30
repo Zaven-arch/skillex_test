@@ -113,7 +113,7 @@ class CombinationService {
       for (const combination of combinations) {
         for (const item of combination.items) {
           // Check if item or responseId is undefined
-          if (item === undefined || responseId === undefined) {
+          if (!item || !responseId) {
             throw new Error('Item or response ID is undefined.')
           }
 
